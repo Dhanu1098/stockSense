@@ -15,7 +15,7 @@ jobs:
   build-test-deploy:
     name: Build, Test and Deploy
     runs-on: ubuntu-latest
-    environment: dev
+    environment: main
     outputs:
       test_failed: ${{ steps.set_test_status.outputs.test_failed }}
     
