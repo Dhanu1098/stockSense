@@ -32,12 +32,13 @@ const initializeAPI = async () => {
       console.log("Breeze API initialized successfully, testing with stock quotes...");
       
       // Test with some popular Indian stocks
-      const testStocks = ["RELIANCE", "TCS", "HDFCBANK", "INFY"];
+      // Using NSE symbols that will be mapped to ICICI stock codes in breezeUtils.ts
+      const testStocks = ["NSE:RELIANCE", "NSE:TCS", "NSE:HDFCBANK", "NSE:INFY"];
       
       for (const stock of testStocks) {
         try {
           console.log(`Testing stock quote for ${stock}...`);
-          const stockData = await getStockQuote(`NSE:${stock}`);
+          const stockData = await getStockQuote(stock);
           console.log(`Stock data for ${stock}:`, stockData);
           
           if (stockData) {
