@@ -3,7 +3,7 @@ import {
   ChartContainer, 
   ChartTooltip, 
   ChartTooltipContent 
-} from '@/components/ui/Chart';
+} from '@/components/ui/chart';
 import { 
   Area, 
   AreaChart, 
