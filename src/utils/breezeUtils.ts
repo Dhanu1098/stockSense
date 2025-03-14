@@ -14,6 +14,16 @@ let breezeClient: any = null;
 /**
  * Initialize the Breeze API client
  * This should be called once when the application starts
+ * 
+ * To get a valid session token:
+ * 1. Go to https://api.icicidirect.com/apiuser/login?api_key=YOUR_ENCODED_API_KEY
+ *    (Encode your API key using encodeURIComponent or a URL encoder)
+ * 2. Login with your ICICI Direct credentials
+ * 3. After login, check the network tab in developer tools
+ * 4. Find the request to your redirect URL and look for API_Session in the form data
+ * 5. Use that value as your session token
+ * 
+ * Note: Session tokens expire at midnight or after 24 hours
  */
 export const initializeBreezeAPI = async () => {
   console.log("Initializing Breeze API...");
@@ -35,7 +45,7 @@ export const initializeBreezeAPI = async () => {
       return module.BreezeConnect;
     }).catch(error => {
       console.error("Failed to import breezeconnect:", error);
-      throw new Error("Failed to import breezeconnect package");
+      throw new Error("Failed to import breezeconnect package. Make sure it's installed with 'npm install breezeconnect'");
     });
     
     console.log("Initializing Breeze client with API key...");
@@ -46,8 +56,9 @@ export const initializeBreezeAPI = async () => {
     });
     
     console.log("Generating session with API secret and session token...");
+    console.log("Session token being used:", BREEZE_SESSION_TOKEN);
     
-    // Generate session using the hardcoded session token
+    // Generate session using the session token
     await breezeClient.generateSession(BREEZE_API_SECRET, BREEZE_SESSION_TOKEN);
     
     console.log("Breeze API initialized successfully");

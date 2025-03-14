@@ -51,6 +51,7 @@ jobs:
           VITE_GEMINI_API_KEY=${{ secrets.VITE_GEMINI_API_KEY }}
           VITE_BREEZE_API_KEY=${{ secrets.VITE_BREEZE_API_KEY }}
           VITE_BREEZE_API_SECRET=${{ secrets.VITE_BREEZE_API_SECRET }}
+          BREEZE_SESSION_TOKEN=${{ secrets.BREEZE_SESSION_TOKEN }}
           EOF
           
           # Create .env.example file for testing
