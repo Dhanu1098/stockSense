@@ -16,19 +16,36 @@ let breezeClient: any = null;
  * This should be called once when the application starts
  */
 export const initializeBreezeAPI = async () => {
+  console.log("Initializing Breeze API...");
+  console.log("API Key configured:", !!BREEZE_API_KEY);
+  console.log("API Secret configured:", !!BREEZE_API_SECRET);
+  console.log("Session Token configured:", !!BREEZE_SESSION_TOKEN);
+  
   if (!isBreezeConfigured) {
     console.warn("Breeze API credentials not configured. Using mock data instead.");
     return false;
   }
 
   try {
+    console.log("Attempting to import breezeconnect package...");
+    
     // Dynamically import the breezeconnect package
-    const BreezeConnect = await import('breezeconnect').then((module) => module.BreezeConnect);
+    const BreezeConnect = await import('breezeconnect').then((module) => {
+      console.log("breezeconnect package imported successfully");
+      return module.BreezeConnect;
+    }).catch(error => {
+      console.error("Failed to import breezeconnect:", error);
+      throw new Error("Failed to import breezeconnect package");
+    });
+    
+    console.log("Initializing Breeze client with API key...");
     
     // Initialize the client
     breezeClient = new BreezeConnect({
       api_key: BREEZE_API_KEY
     });
+    
+    console.log("Generating session with API secret and session token...");
     
     // Generate session using the hardcoded session token
     await breezeClient.generateSession(BREEZE_API_SECRET, BREEZE_SESSION_TOKEN);
@@ -58,12 +75,16 @@ export const getStockQuote = async (symbol: string) => {
     // For NSE stocks
     const stockCode = symbol.replace('NSE:', '');
     
+    console.log(`Fetching stock quote for ${stockCode} from Breeze API...`);
+    
     // Get quotes from Breeze API
     const response = await breezeClient.getQuotes({
       stockCode: stockCode,
       exchangeCode: "NSE",
       productType: "cash"
     });
+    
+    console.log(`Breeze API response for ${stockCode}:`, response);
     
     if (response && response.Success) {
       const data = response.Success;
