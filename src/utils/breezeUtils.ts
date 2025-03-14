@@ -10,6 +10,12 @@ const isBreezeConfigured = BREEZE_API_KEY && BREEZE_API_SECRET && BREEZE_SESSION
 
 // Initialize Breeze API client
 let breezeClient: any = null;
+let BreezeConnect: any = null;
+
+// Flag to track if Breeze API is available
+export const isBreezeAPIAvailable = () => {
+  return breezeClient !== null;
+};
 
 /**
  * Initialize the Breeze API client
@@ -37,20 +43,61 @@ export const initializeBreezeAPI = async () => {
   }
 
   try {
-    console.log("Attempting to import breezeconnect package...");
+    console.log("Using breezeconnect package...");
     
-    // Dynamically import the breezeconnect package
-    const BreezeConnect = await import('breezeconnect').then((module) => {
-      console.log("breezeconnect package imported successfully");
-      return module.BreezeConnect;
-    }).catch(error => {
-      console.error("Failed to import breezeconnect:", error);
-      throw new Error("Failed to import breezeconnect package. Make sure it's installed with 'npm install breezeconnect'");
+    // Create a script element to load breezeconnect as a global variable
+    // This is a workaround for the 'require is not defined' error in Vite
+    return new Promise<boolean>((resolve) => {
+      // Check if we already have the BreezeConnect global
+      if (window.BreezeConnect) {
+        console.log("BreezeConnect already loaded globally");
+        BreezeConnect = window.BreezeConnect;
+        initializeClient(resolve);
+        return;
+      }
+
+      const script = document.createElement('script');
+      script.src = 'https://unpkg.com/breezeconnect@1.0.29/dist/breezeconnect.min.js';
+      script.async = true;
+      
+      script.onload = () => {
+        console.log("BreezeConnect script loaded successfully");
+        // Access the global BreezeConnect object
+        if (window.BreezeConnect) {
+          BreezeConnect = window.BreezeConnect;
+          initializeClient(resolve);
+        } else {
+          console.error("BreezeConnect not found in window after script load");
+          resolve(false);
+        }
+      };
+      
+      script.onerror = (error) => {
+        console.error("Failed to load BreezeConnect script:", error);
+        resolve(false);
+      };
+      
+      document.head.appendChild(script);
     });
+  } catch (error) {
+    console.error("Failed to initialize Breeze API:", error);
+    toast.error("Failed to connect to Breeze API. Using estimated values.");
+    return false;
+  }
+};
+
+// Helper function to initialize the Breeze client
+const initializeClient = async (resolve: (value: boolean) => void) => {
+  try {
+    if (!BreezeConnect) {
+      console.error("BreezeConnect is not available");
+      resolve(false);
+      return;
+    }
     
     console.log("Initializing Breeze client with API key...");
     
-    // Initialize the client
+    // Initialize the client with the API key
     breezeClient = new BreezeConnect({
       api_key: BREEZE_API_KEY
     });
@@ -62,19 +109,49 @@ export const initializeBreezeAPI = async () => {
     await breezeClient.generateSession(BREEZE_API_SECRET, BREEZE_SESSION_TOKEN);
     
     console.log("Breeze API initialized successfully");
-    toast.success("Connected to Breeze API for real-time Indian stock market data");
-    return true;
+    
+    // Test the API with a simple call
+    try {
+      console.log("Testing API with a simple call to getQuotes...");
+      const testResponse = await breezeClient.getQuotes({
+        stockCode: "RELIANCE",
+        exchangeCode: "NSE",
+        productType: "cash"
+      });
+      
+      console.log("Test API call response:", JSON.stringify(testResponse, null, 2));
+      
+      if (testResponse && testResponse.Success) {
+        toast.success("Connected to Breeze API for real-time Indian stock market data");
+        resolve(true);
+      } else {
+        console.warn("Test API call did not return expected data:", testResponse);
+        toast.warning("Connected to Breeze API but test call failed. Using mock data.");
+        resolve(false);
+      }
+    } catch (testError) {
+      console.error("Test API call failed:", testError);
+      toast.error("Failed to test Breeze API connection. Using estimated values.");
+      resolve(false);
+    }
   } catch (error) {
-    console.error("Failed to initialize Breeze API:", error);
+    console.error("Failed to initialize Breeze client:", error);
     toast.error("Failed to connect to Breeze API. Using estimated values.");
-    return false;
+    resolve(false);
   }
 };
 
+// Add BreezeConnect to the window type
+declare global {
+  interface Window {
+    BreezeConnect: any;
+  }
+}
+
 /**
- * Get stock quotes from Breeze API
- * @param symbol Stock symbol (e.g., "RELIANCE", "TCS")
- * @returns Stock quote data
+ * Get stock quote from Breeze API
+ * @param symbol Stock symbol (e.g., "NSE:RELIANCE")
+ * @returns Stock quote data or null if not available
  */
 export const getStockQuote = async (symbol: string) => {
   if (!breezeClient) {
@@ -95,10 +172,11 @@ export const getStockQuote = async (symbol: string) => {
       productType: "cash"
     });
     
-    console.log(`Breeze API response for ${stockCode}:`, response);
+    console.log(`Breeze API raw response for ${stockCode}:`, JSON.stringify(response, null, 2));
     
     if (response && response.Success) {
       const data = response.Success;
+      console.log(`Successfully received data for ${stockCode}:`, data);
       
       return {
         symbol: `NSE:${stockCode}`,
@@ -119,6 +197,7 @@ export const getStockQuote = async (symbol: string) => {
       };
     } else {
       console.warn("No data available from Breeze API for", symbol);
+      console.log("Response structure:", response);
       return null;
     }
   } catch (error) {
@@ -128,170 +207,9 @@ export const getStockQuote = async (symbol: string) => {
 };
 
 /**
- * Get historical data from Breeze API
- * @param symbol Stock symbol (e.g., "RELIANCE", "TCS")
- * @param interval Interval for data points (e.g., "1minute", "5minute", "1day")
- * @param fromDate Start date in ISO format
- * @param toDate End date in ISO format
- * @returns Historical data for charting
- */
-export const getHistoricalData = async (
-  symbol: string, 
-  interval: string = "1day", 
-  fromDate: string = "", 
-  toDate: string = ""
-) => {
-  if (!breezeClient) {
-    console.warn("Breeze API not initialized. Using mock data.");
-    return null;
-  }
-
-  try {
-    // For NSE stocks
-    const stockCode = symbol.replace('NSE:', '');
-    
-    // Set default dates if not provided
-    if (!fromDate) {
-      const startDate = new Date();
-      startDate.setMonth(startDate.getMonth() - 3); // 3 months ago
-      fromDate = startDate.toISOString().split('T')[0];
-    }
-    
-    if (!toDate) {
-      toDate = new Date().toISOString().split('T')[0];
-    }
-    
-    // Map interval to Breeze API interval
-    let breezeInterval = "1day";
-    if (interval === "intraday" || interval === "5minute") {
-      breezeInterval = "5minute";
-    } else if (interval === "weekly") {
-      breezeInterval = "1week";
-    }
-    
-    // Get historical data from Breeze API
-    const response = await breezeClient.getHistoricalData({
-      interval: breezeInterval,
-      fromDate: fromDate,
-      toDate: toDate,
-      stockCode: stockCode,
-      exchangeCode: "NSE",
-      productType: "cash"
-    });
-    
-    if (response && response.Success && response.Success.candles) {
-      // Transform the data for our chart component
-      return response.Success.candles.map((candle: any) => ({
-        date: candle[0], // Date
-        value: parseFloat(candle[4]) // Close price
-      }));
-    } else {
-      console.warn("No historical data available from Breeze API for", symbol);
-      return null;
-    }
-  } catch (error) {
-    console.error("Error fetching historical data from Breeze API:", error);
-    return null;
-  }
-};
-
-/**
- * Get market indices from Breeze API
- * @returns Array of market indices
- */
-export const getMarketIndices = async () => {
-  if (!breezeClient) {
-    console.warn("Breeze API not initialized. Using mock data.");
-    return null;
-  }
-
-  try {
-    // Define the indices we want to fetch
-    const indices = [
-      { code: "NIFTY", name: "NIFTY 50" },
-      { code: "BANKNIFTY", name: "Bank NIFTY" },
-      { code: "NIFTYIT", name: "NIFTY IT" },
-      { code: "SENSEX", name: "SENSEX" }
-    ];
-    
-    // Fetch data for each index
-    const promises = indices.map(async (index) => {
-      try {
-        const response = await breezeClient.getQuotes({
-          stockCode: index.code,
-          exchangeCode: "NSE",
-          productType: "cash"
-        });
-        
-        if (response && response.Success) {
-          const data = response.Success;
-          
-          return {
-            name: index.name,
-            value: parseFloat(data.lastRate),
-            change: parseFloat(data.absoluteChange),
-            changePercent: parseFloat(data.percentageChange),
-            currency: "INR",
-            isMock: false
-          };
-        } else {
-          console.warn(`No data available for ${index.name}`);
-          return null;
-        }
-      } catch (error) {
-        console.error(`Error fetching ${index.name}:`, error);
-        return null;
-      }
-    });
-    
-    const results = await Promise.all(promises);
-    return results.filter(result => result !== null);
-  } catch (error) {
-    console.error("Error fetching market indices from Breeze API:", error);
-    return null;
-  }
-};
-
-/**
- * Search for stocks using Breeze API
- * @param query Search query
- * @returns Array of matching stocks
- */
-export const searchStocks = async (query: string) => {
-  if (!breezeClient) {
-    console.warn("Breeze API not initialized. Using mock data.");
-    return null;
-  }
-
-  try {
-    // Use the getNames function to search for stocks
-    const response = await breezeClient.getNames({
-      exchange: "NSE",
-      searchString: query
-    });
-    
-    if (response && response.Success) {
-      return response.Success.map((stock: any) => ({
-        symbol: `NSE:${stock.code}`,
-        name: stock.name,
-        type: "Equity",
-        region: "India",
-        currency: "INR"
-      }));
-    } else {
-      console.warn("No search results from Breeze API for", query);
-      return null;
-    }
-  } catch (error) {
-    console.error("Error searching stocks with Breeze API:", error);
-    return null;
-  }
-};
-
-/**
  * Get company overview from Breeze API
- * @param symbol Stock symbol
- * @returns Company overview data
+ * @param symbol Stock symbol (e.g., "NSE:RELIANCE")
+ * @returns Company overview data or null if not available
  */
 export const getCompanyOverview = async (symbol: string) => {
   if (!breezeClient) {
@@ -303,32 +221,58 @@ export const getCompanyOverview = async (symbol: string) => {
     // For NSE stocks
     const stockCode = symbol.replace('NSE:', '');
     
-    // Get quotes from Breeze API for basic information
-    const response = await breezeClient.getQuotes({
+    console.log(`Fetching company overview for ${stockCode} from Breeze API...`);
+    
+    // Get names from Breeze API to get company details
+    const response = await breezeClient.getNames({
       stockCode: stockCode,
-      exchangeCode: "NSE",
-      productType: "cash"
+      exchangeCode: "NSE"
     });
+    
+    console.log(`Breeze API names response for ${stockCode}:`, JSON.stringify(response, null, 2));
     
     if (response && response.Success) {
       const data = response.Success;
+      console.log(`Successfully received company data for ${stockCode}:`, data);
       
-      // Breeze API doesn't provide detailed company information
-      // We'll return what we can and supplement with mock data
+      // Get quotes for additional data
+      const quotesResponse = await breezeClient.getQuotes({
+        stockCode: stockCode,
+        exchangeCode: "NSE",
+        productType: "cash"
+      });
+      
+      // Define a type for the quotes data to fix linter errors
+      interface QuotesData {
+        marketCap?: string;
+        pe?: number;
+        eps?: number;
+        dividend?: number;
+        targetPrice?: number;
+        [key: string]: any;
+      }
+      
+      let quotesData: QuotesData = {};
+      if (quotesResponse && quotesResponse.Success) {
+        quotesData = quotesResponse.Success as QuotesData;
+      }
+      
       return {
-        symbol: symbol,
+        symbol: `NSE:${stockCode}`,
         name: data.companyName || stockCode,
+        description: data.description || `${stockCode} is a company listed on the National Stock Exchange of India.`,
         exchange: "NSE",
-        industry: "Indian Equity", // Not provided by Breeze
-        sector: "Indian Equity", // Not provided by Breeze
-        marketCap: data.marketCap || "N/A",
-        peRatio: parseFloat(data.pe) || 0,
-        eps: 0, // Not provided by Breeze
-        dividend: 0, // Not provided by Breeze
-        description: `${data.companyName || stockCode} is a company listed on the National Stock Exchange of India.`
+        industry: data.sector || "Indian Equity",
+        sector: data.sector || "Indian Equity",
+        marketCap: quotesData.marketCap ? `₹${quotesData.marketCap} Cr` : "N/A",
+        peRatio: quotesData.pe || 0,
+        eps: quotesData.eps || 0,
+        dividend: quotesData.dividend || 0,
+        targetPrice: quotesData.targetPrice || 0
       };
     } else {
       console.warn("No company data available from Breeze API for", symbol);
+      console.log("Response structure:", response);
       return null;
     }
   } catch (error) {
@@ -338,9 +282,69 @@ export const getCompanyOverview = async (symbol: string) => {
 };
 
 /**
+ * Get historical data from Breeze API
+ * @param symbol Stock symbol (e.g., "NSE:RELIANCE")
+ * @param interval Time interval (e.g., "1day")
+ * @returns Historical data or null if not available
+ */
+export const getHistoricalData = async (symbol: string, interval = "1day") => {
+  if (!breezeClient) {
+    console.warn("Breeze API not initialized. Using mock data.");
+    return null;
+  }
+
+  try {
+    // For NSE stocks
+    const stockCode = symbol.replace('NSE:', '');
+    
+    console.log(`Fetching historical data for ${stockCode} from Breeze API...`);
+    
+    // Calculate date range (last 100 days)
+    const toDate = new Date();
+    const fromDate = new Date();
+    fromDate.setDate(fromDate.getDate() - 100);
+    
+    const toDateStr = toDate.toISOString();
+    const fromDateStr = fromDate.toISOString();
+    
+    // Get historical data from Breeze API
+    const response = await breezeClient.getHistoricalDatav2({
+      interval: interval,
+      fromDate: fromDateStr,
+      toDate: toDateStr,
+      stockCode: stockCode,
+      exchangeCode: "NSE",
+      productType: "cash"
+    });
+    
+    console.log(`Breeze API historical data response for ${stockCode}:`, JSON.stringify(response, null, 2));
+    
+    if (response && response.Success) {
+      const data = response.Success.candles;
+      console.log(`Successfully received historical data for ${stockCode}:`, data);
+      
+      // Transform data to required format
+      return data.map((candle: any) => {
+        return {
+          date: candle[0].split('T')[0], // Extract date part from ISO string
+          value: parseFloat(candle[4]) // Close price
+        };
+      });
+    } else {
+      console.warn("No historical data available from Breeze API for", symbol);
+      console.log("Response structure:", response);
+      return null;
+    }
+  } catch (error) {
+    console.error("Error fetching historical data from Breeze API:", error);
+    return null;
+  }
+};
+
+/**
  * Get company name from Breeze API
- * @param symbol Stock symbol
- * @returns Company name
+ * @param symbol Stock symbol (e.g., "NSE:RELIANCE")
+ * @returns Company name or null if not available
  */
 export const getCompanyName = async (symbol: string) => {
   if (!breezeClient) {
@@ -352,15 +356,17 @@ export const getCompanyName = async (symbol: string) => {
     // For NSE stocks
     const stockCode = symbol.replace('NSE:', '');
     
-    // Get quotes from Breeze API for basic information
-    const response = await breezeClient.getQuotes({
+    console.log(`Fetching company name for ${stockCode} from Breeze API...`);
+    
+    // Get names from Breeze API
+    const response = await breezeClient.getNames({
       stockCode: stockCode,
-      exchangeCode: "NSE",
-      productType: "cash"
+      exchangeCode: "NSE"
     });
     
     if (response && response.Success) {
-      return response.Success.companyName || null;
+      const data = response.Success;
+      return data.companyName || stockCode;
     } else {
       console.warn("No company name available from Breeze API for", symbol);
       return null;
@@ -371,7 +377,103 @@ export const getCompanyName = async (symbol: string) => {
   }
 };
 
-// Export a function to check if Breeze API is available
-export const isBreezeAPIAvailable = () => {
-  return breezeClient !== null;
+/**
+ * Get market indices from Breeze API
+ * @returns Market indices data or null if not available
+ */
+export const getMarketIndices = async () => {
+  if (!breezeClient) {
+    console.warn("Breeze API not initialized. Using mock data.");
+    return null;
+  }
+
+  try {
+    console.log("Fetching market indices from Breeze API...");
+    
+    // Define indices to fetch
+    const indices = [
+      { name: "NIFTY 50", code: "NIFTY" },
+      { name: "Bank NIFTY", code: "BANKNIFTY" },
+      { name: "NIFTY IT", code: "NIFTYIT" },
+      { name: "SENSEX", code: "SENSEX" }
+    ];
+    
+    const results = [];
+    
+    // Fetch data for each index
+    for (const index of indices) {
+      try {
+        const response = await breezeClient.getQuotes({
+          stockCode: index.code,
+          exchangeCode: "NSE",
+          productType: "cash"
+        });
+        
+        if (response && response.Success) {
+          const data = response.Success;
+          
+          results.push({
+            name: index.name,
+            value: parseFloat(data.lastRate),
+            change: parseFloat(data.absoluteChange),
+            changePercent: parseFloat(data.percentageChange),
+            currency: "INR"
+          });
+        }
+      } catch (indexError) {
+        console.error(`Error fetching index ${index.name}:`, indexError);
+      }
+    }
+    
+    if (results.length > 0) {
+      return results;
+    } else {
+      console.warn("No market indices available from Breeze API");
+      return null;
+    }
+  } catch (error) {
+    console.error("Error fetching market indices from Breeze API:", error);
+    return null;
+  }
+};
+
+/**
+ * Search for stocks using Breeze API
+ * @param query Search query
+ * @returns Search results or null if not available
+ */
+export const searchStocks = async (query: string) => {
+  if (!breezeClient) {
+    console.warn("Breeze API not initialized. Using mock data.");
+    return null;
+  }
+
+  try {
+    console.log(`Searching for stocks with query "${query}" using Breeze API...`);
+    
+    // Get names from Breeze API
+    const response = await breezeClient.getNames({
+      stockCode: query,
+      exchangeCode: "NSE"
+    });
+    
+    console.log(`Breeze API search response for "${query}":`, JSON.stringify(response, null, 2));
+    
+    if (response && response.Success) {
+      // Transform data to required format
+      return [{
+        symbol: `NSE:${response.Success.code}`,
+        name: response.Success.companyName || response.Success.code,
+        region: "India",
+        currency: "INR",
+        type: "Equity"
+      }];
+    } else {
+      console.warn(`No search results for "${query}" from Breeze API`);
+      return null;
+    }
+  } catch (error) {
+    console.error(`Error searching for "${query}" using Breeze API:`, error);
+    return null;
+  }
 }; 

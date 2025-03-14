@@ -4,7 +4,7 @@ import App from "./App.tsx";
 import "./index.css";
 import { ThemeProvider } from "./components/theme-provider";
 import { toast } from "sonner";
-import { initializeBreezeAPI } from "./utils/breezeUtils";
+import { initializeBreezeAPI, getStockQuote } from "./utils/breezeUtils";
 
 // Initialize theme from localStorage or system preference before rendering
 const initializeTheme = () => {
@@ -23,10 +23,33 @@ const initializeTheme = () => {
 // Initialize API
 const initializeAPI = async () => {
   try {
+    console.log("Attempting to initialize Breeze API...");
+    
     // Try to initialize Breeze API first
     const breezeInitialized = await initializeBreezeAPI();
     
-    if (!breezeInitialized) {
+    if (breezeInitialized) {
+      console.log("Breeze API initialized successfully, testing with stock quotes...");
+      
+      // Test with some popular Indian stocks
+      const testStocks = ["RELIANCE", "TCS", "HDFCBANK", "INFY"];
+      
+      for (const stock of testStocks) {
+        try {
+          console.log(`Testing stock quote for ${stock}...`);
+          const stockData = await getStockQuote(`NSE:${stock}`);
+          console.log(`Stock data for ${stock}:`, stockData);
+          
+          if (stockData) {
+            toast.success(`Successfully fetched real data for ${stock}`);
+          } else {
+            toast.warning(`Could not fetch real data for ${stock}, using mock data`);
+          }
+        } catch (stockError) {
+          console.error(`Error fetching ${stock}:`, stockError);
+        }
+      }
+    } else {
       // If Breeze API initialization failed, use mock data
       console.log("Using mock data for Indian stock market");
       toast.info("Using realistic mock data for Indian stocks.", {
@@ -46,8 +69,8 @@ initializeAPI();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <ThemeProvider defaultTheme="system" enableSystem>
+    <ThemeProvider defaultTheme="dark" storageKey="theme">
       <App />
     </ThemeProvider>
-  </React.StrictMode>,
+  </React.StrictMode>
 );

@@ -16,8 +16,10 @@ import * as breezeUtils from './breezeUtils';
 
 // Helper function to check if we should use mock data
 const shouldUseMockData = () => {
-  // We'll only use mock data if Breeze API is not available
-  return !breezeUtils.isBreezeAPIAvailable();
+  // Check if Breeze API is available
+  const useMock = !breezeUtils.isBreezeAPIAvailable();
+  console.log("Using mock data:", useMock);
+  return useMock;
 };
 
 // Format large numbers for better readability
