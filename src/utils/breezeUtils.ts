@@ -305,6 +305,40 @@ export const getCompanyOverview = async (symbol: string) => {
   }
 };
 
+/**
+ * Get company name from Breeze API
+ * @param symbol Stock symbol
+ * @returns Company name
+ */
+export const getCompanyName = async (symbol: string) => {
+  if (!breezeClient) {
+    console.warn("Breeze API not initialized. Using mock data.");
+    return null;
+  }
+
+  try {
+    // For NSE stocks
+    const stockCode = symbol.replace('NSE:', '');
+    
+    // Get quotes from Breeze API for basic information
+    const response = await breezeClient.getQuotes({
+      stockCode: stockCode,
+      exchangeCode: "NSE",
+      productType: "cash"
+    });
+    
+    if (response && response.Success) {
+      return response.Success.companyName || null;
+    } else {
+      console.warn("No company name available from Breeze API for", symbol);
+      return null;
+    }
+  } catch (error) {
+    console.error("Error fetching company name from Breeze API:", error);
+    return null;
+  }
+};
+
 // Export a function to check if Breeze API is available
 export const isBreezeAPIAvailable = () => {
   return breezeClient !== null;
